@@ -256,7 +256,7 @@ def Lane_Detection(image):
 
 first_frame = 1
 
-image_name = "/Users/02.011x/Desktop/화면 기록 2024-07-07 15.07.00.mov"
+image_name = "/Users/02.011x/Documents/GitHub/Autonomous-Vehicle/drive3.mp4"
 cap = cv2.VideoCapture(image_name)
 
 while (cap.isOpened()):
