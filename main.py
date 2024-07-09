@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from PIL import Image
+import math
 
 red = (0, 0, 255)
 green = (0, 255, 0)
@@ -8,6 +9,7 @@ blue = (255, 0, 0)
 white = (255, 255, 255)
 yellow = (0, 255, 255)
 deepgray = (43, 43, 43)
+dark = (1, 1, 1)
 
 cyan = (255, 255, 0)
 magenta = (255, 0, 255)
@@ -20,29 +22,26 @@ pts = np.array([[0, 0], [0, 0], [0, 0], [0, 0]], np.int32)
 pts = pts.reshape((-1, 1, 2))
 
 first_frame = 1
+next_frame = np.zeros(8)
+l_pos, r_pos, l_cent, r_cent = 0, 0, 0, 0
+uxhalf, uyhalf, dxhalf, dyhalf = 0, 0, 0, 0
 
 def grayscale(img):
-    """Applies the Grayscale"""
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 def canny(img, low_threshold, high_threshold):
-    """Applies the Canny transform"""
     return cv2.Canny(img, low_threshold, high_threshold)
 
 def gaussian_blur(img, kernel_size):
-    """Applies a Gaussian Noise kernel"""
     return cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
 
 def region_of_interest(img, vertices):
-    """Applies an image mask."""
     mask = np.zeros_like(img)
-
     if len(img.shape) > 2:
         channel_count = img.shape[2]
-        ignore_mask_color = (255, ) * channel_count
+        ignore_mask_color = (255,) * channel_count
     else:
         ignore_mask_color = 255
-
     cv2.fillPoly(mask, vertices, ignore_mask_color)
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
@@ -53,6 +52,9 @@ def get_slope(x1,y1,x2,y2):
 def draw_lines(img, lines):
     global cache
     global first_frame
+    global next_frame
+    global l_center, r_center, lane_center
+    global uxhalf, uyhalf, dxhalf, dyhalf
 
     y_global_min = img.shape[0] 
     y_max = img.shape[0]
@@ -130,14 +132,15 @@ def draw_lines(img, lines):
     pts = np.array([[next_frame[0], next_frame[1]], [next_frame[2], next_frame[3]], [next_frame[6], next_frame[7]], [next_frame[4], next_frame[5]]], np.int32)
     pts = pts.reshape((-1, 1, 2))
 
-    global l_center
-    global r_center
-    global lane_center
-
     div = 2
     l_center = (int((next_frame[0] + next_frame[2]) / div), int((next_frame[1] + next_frame[3]) / div))
     r_center = (int((next_frame[4] + next_frame[6]) / div), int((next_frame[5] + next_frame[7]) / div))
     lane_center = (int((l_center[0] + r_center[0]) / div), int((l_center[1] + r_center[1]) / div))
+
+    uxhalf = int((next_frame[2]+next_frame[6])/2)
+    uyhalf = int((next_frame[3]+next_frame[7])/2)
+    dxhalf = int((next_frame[0]+next_frame[4])/2)
+    dyhalf = int((next_frame[1]+next_frame[5])/2)
 
     cache = next_frame
 
@@ -157,10 +160,8 @@ def process_image(image):
     height, width = image.shape[:2]
 
     kernel_size = 3
-
     low_thresh = 100
     high_thresh = 150
-
     rho = 4
     theta = np.pi/180
     thresh = 100
@@ -193,7 +194,6 @@ def process_image(image):
 
 def get_pts(image):
     height, width = image.shape[:2]
-
     vertices = np.array([
                 [250, 650],
                 [550, 470],
@@ -202,52 +202,71 @@ def get_pts(image):
                 ])
     return vertices
 
+def warning_text(image):
+    global dxhalf
+    whalf, height = 640, 720
+    center = whalf - 5
+    angle = int(round(math.atan((dxhalf-center)/120) * 180/math.pi, 3) * 3)
+
+    m = 2
+    limit = 0
+    if angle > 90:
+        angle = 89
+    if 90 > angle > limit:
+        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, red, 1)
+        cv2.putText(image, 'Turn Right', (150, 30*m), font, 0.8, red, 1)
+
+    if angle < -90:
+        angle = -89
+    if -90 < angle < -limit:
+        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, red, 1)
+        cv2.putText(image, 'Turn Left', (150, 30*m), font, 0.8, red, 1)
+
+    elif angle == 0:
+        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, white, 1)
+        cv2.putText(image, 'None', (150, 30*m), font, 0.8, white, 1)
+
+def direction_line(image, height, whalf, color=yellow):
+    cv2.line(image, (whalf-5, height), (whalf-5, 600), white, 2)  # 방향 제어 기준선
+    cv2.line(image, (whalf-5, height), (dxhalf, 600), red, 2)  # 핸들 방향 제어
+    cv2.circle(image, (whalf-5, height), 120, white, 2)
+
+def lane_position(image, gap=20, length=20, thickness=2, color=red, bcolor=white):
+    global l_cent, r_cent
+
+    l_left = 300
+    l_right = 520
+    l_cent = int((l_left+l_right)/2)
+    cv2.line(image, (l_center[0], l_center[1]+length), (l_center[0], l_center[1]-length), color, thickness)
+
+    r_left = 730
+    r_right = 950
+    r_cent = int((r_left+r_right)/2)
+    cv2.line(image, (r_center[0], r_center[1]+length), (r_center[0], r_center[1]-length), color, thickness)
+
+def draw_lanes(image, thickness=3, color=red):
+    cv2.line(image, (int(next_frame[0]), int(next_frame[1])), (int(next_frame[2]), int(next_frame[3])), red, 3)
+    cv2.line(image, (int(next_frame[6]), int(next_frame[7])), (int(next_frame[4]), int(next_frame[5])), red, 3)
+
 def visualize(result):
     height, width = result.shape[:2]
-    length = 30
-    thickness = 3
     whalf = int(width/2)
-    sl_color = yellow
-
-    cv2.line(result, (whalf, lane_center[1]), (whalf, int(height)), sl_color, 2)
-    cv2.line(result, (whalf, lane_center[1]), (lane_center[0], lane_center[1]), sl_color, 2)
-
-    gap = 20
-    legth2 = 10
-    wb_color = white
-    cv2.line(result, (whalf-gap, lane_center[1]-legth2), (whalf-gap, lane_center[1]+legth2), wb_color, 1)
-    cv2.line(result, (whalf+gap, lane_center[1]-legth2), (whalf+gap, lane_center[1]+legth2), wb_color, 1)
-
-    lp_color = red
-    cv2.line(result, (l_center[0], l_center[1]), (l_center[0], l_center[1]-length), lp_color, thickness)
-    cv2.line(result, (r_center[0], r_center[1]), (r_center[0], r_center[1]-length), lp_color, thickness)
-    cv2.line(result, (lane_center[0], lane_center[1]), (lane_center[0], lane_center[1]-length), lp_color, thickness)
-
-    hei = 30
-    font_size = 2
-    if lane_center[0] < whalf-gap:
-        cv2.putText(result, 'WARNING : ', (10, hei), font, 1, red, font_size)
-        cv2.putText(result, 'Turn Right', (190, hei), font, 1, red, font_size)
-    elif lane_center[0] > whalf+gap:
-        cv2.putText(result, 'WARNING : ', (10, hei), font, 1, red, font_size)
-        cv2.putText(result, 'Turn Left', (190, hei), font, 1, red, font_size)
-
-    return result
-
-def Region(image):
-    height, width = image.shape[:2]
-
-    zeros = np.zeros_like(image)
-    mask = cv2.fillPoly(zeros, [pts], lime)
-
     hhalf = int(height/2)
+
+    zeros = np.zeros_like(result)
+    
     if not lane_center[1] < hhalf:
-        mask = visualize(mask)
-    return mask
+        cv2.fillPoly(zeros, [pts], lime)
+        lane_position(zeros)
+        direction_line(zeros, height=height, whalf=whalf)
+        draw_lanes(zeros)
+        warning_text(zeros)
+
+    return zeros
 
 def Lane_Detection(image):
     processing = process_image(image)
-    region = Region(processing)
+    region = visualize(processing)
     region_resized = cv2.resize(region, (image.shape[1], image.shape[0]))
     combined = cv2.addWeighted(image, 1, region_resized, 0.3, 0)
     return combined
@@ -255,17 +274,24 @@ def Lane_Detection(image):
 #--------------------------Video test--------------------------------------
 
 first_frame = 1
+cache = np.zeros(8)
 
-image_name = "/Users/02.011x/Documents/GitHub/Autonomous-Vehicle/drive3.mp4"
+image_name = "/Users/02.011x/Desktop/화면 기록 2024-07-10 00.46.20.mov"
 cap = cv2.VideoCapture(image_name)
 
+frame_count = 0
 while (cap.isOpened()):
-    _, frame = cap.read()
-    if frame is None:
+    ret, frame = cap.read()
+    if not ret:
         break
-    result = Lane_Detection(frame)
-
-    cv2.imshow("result", result)
+    
+    frame_count += 1
+    # 3프레임마다 한 번씩 처리
+    if frame_count % 4 == 0:
+        result = Lane_Detection(frame)
+        # 결과를 원본 크기로 다시 확대
+        result = cv2.resize(result, (1280, 720))
+        cv2.imshow("result", result)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
