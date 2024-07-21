@@ -3,6 +3,7 @@ import cv2
 from PIL import Image
 import math
 
+
 red = (0, 0, 255)
 green = (0, 255, 0)
 blue = (255, 0, 0)
@@ -156,26 +157,30 @@ def weighted_img(img, initial_img, α=0.8, β=1., λ=0.):
 def process_image(image):
     global first_frame
 
-    image = np.array(Image.fromarray(image).resize((1280, 720)))
+    # 이미지 크기 조정 (처리 속도 향상을 위해)
+    image = cv2.resize(image, (960, 540))
     height, width = image.shape[:2]
 
-    kernel_size = 3
-    low_thresh = 100
+    kernel_size = 5
+    low_thresh = 50
     high_thresh = 150
-    rho = 4
+    rho = 1  # 더 정밀한 라인 검출
     theta = np.pi/180
-    thresh = 100
-    min_line_len = 50
-    max_line_gap = 150
+    thresh = 30  # 더 낮은 임계값으로 더 많은 선 검출
+    min_line_len = 50  # 더 짧은 선분도 검출
+    max_line_gap = 100  # 간격 증가로 끊어진 선 연결
 
     gray_image = grayscale(image)
     img_hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
 
-    lower_yellow = np.array([20, 100, 100], dtype = "uint8")
-    upper_yellow = np.array([30, 255, 255], dtype = "uint8")
+    # 노란색과 흰색 범위 확장
+    lower_yellow = np.array([15, 80, 80], dtype="uint8")
+    upper_yellow = np.array([35, 255, 255], dtype="uint8")
+    lower_white = np.array([0, 0, 200], dtype="uint8")
+    upper_white = np.array([255, 30, 255], dtype="uint8")
 
     mask_yellow = cv2.inRange(img_hsv, lower_yellow, upper_yellow)
-    mask_white = cv2.inRange(gray_image, 100, 255)
+    mask_white = cv2.inRange(img_hsv, lower_white, upper_white)
 
     mask_yw = cv2.bitwise_or(mask_white, mask_yellow)
     mask_yw_image = cv2.bitwise_and(gray_image, mask_yw)
@@ -194,13 +199,110 @@ def process_image(image):
 
 def get_pts(image):
     height, width = image.shape[:2]
+    # ROI 영역을 더 넓게 설정
     vertices = np.array([
-                [250, 650],
-                [550, 470],
-                [730, 470],
-                [1100, 650]
+                [int(0.1*width), height],
+                [int(0.4*width), int(0.6*height)],
+                [int(0.6*width), int(0.6*height)],
+                [int(0.9*width), height]
                 ])
     return vertices
+
+def calculate_steering_angle(image, lines):
+    height, width = image.shape[:2]
+    
+    if len(lines) == 0:
+        return 0
+    
+    left_lines = []
+    right_lines = []
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        if x2 - x1 == 0:
+            continue
+        slope = (y2 - y1) / (x2 - x1)
+        if slope < 0:
+            left_lines.append(line)
+        else:
+            right_lines.append(line)
+    
+    left_points = np.array([l[0] for l in left_lines])
+    right_points = np.array([l[0] for l in right_lines])
+    
+    # 왼쪽, 오른쪽 차선의 평균점 계산
+    left_mean = np.mean(left_points, axis=0) if len(left_points) > 0 else None
+    right_mean = np.mean(right_points, axis=0) if len(right_points) > 0 else None
+    
+    if left_mean is not None and right_mean is not None:
+        center = (left_mean + right_mean) / 2
+    elif left_mean is not None:
+        center = left_mean
+    elif right_mean is not None:
+        center = right_mean
+    else:
+        return 0
+    
+    car_center = width / 2
+    offset = center[0] - car_center
+    
+    # 조향각 계산 (단순화된 계산)
+    steering_angle = math.degrees(math.atan(offset / height))
+    return steering_angle
+
+def draw_steering_direction(image, steering_angle):
+    height, width = image.shape[:2]
+    center_x = int(width / 2)
+    center_y = height
+    
+    # 조향 방향 선 그리기
+    length = 100
+    angle_rad = math.radians(steering_angle)
+    end_x = int(center_x - length * math.sin(angle_rad))
+    end_y = int(center_y - length * math.cos(angle_rad))
+    
+    cv2.line(image, (center_x, center_y), (end_x, end_y), (0, 255, 0), 3)
+    cv2.putText(image, f"Angle: {steering_angle:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+def Lane_Detection(image):
+    processing = process_image(image)
+    
+    # 차선 검출
+    gray = cv2.cvtColor(processing, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 50, minLineLength=50, maxLineGap=100)
+    
+    # 조향각 계산
+    steering_angle = calculate_steering_angle(processing, lines)
+    
+    region = visualize(processing)
+    region_resized = cv2.resize(region, (image.shape[1], image.shape[0]))
+    combined = cv2.addWeighted(image, 1, region_resized, 0.3, 0)
+    
+    # 조향 방향 표시
+    draw_steering_direction(combined, steering_angle)
+    
+    # 색상 감지 및 표시
+    color, point = detect_color(image)
+    if color != "None":
+        cv2.circle(combined, point, 10, (0, 255, 255), -1)  # 감지 지점 표시
+        cv2.putText(combined, f"Detected: {color}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    
+    return combined
+
+
+def get_pts(image):
+    height, width = image.shape[:2]
+    
+    # 사다리꼴 모양의 ROI 정의
+    bottom_left = [int(0.1 * width), height]
+    bottom_right = [int(0.9 * width), height]
+    top_left = [int(0.4 * width), int(0.6 * height)]
+    top_right = [int(0.6 * width), int(0.6 * height)]
+    
+    vertices = np.array([bottom_left, top_left, top_right, bottom_right], np.int32)
+    
+    return [vertices]
+
 
 def warning_text(image):
     global dxhalf
@@ -271,6 +373,58 @@ def Lane_Detection(image):
     combined = cv2.addWeighted(image, 1, region_resized, 0.3, 0)
     return combined
 
+def detect_color(image):
+    height, width = image.shape[:2]
+    y = int(height * 2/5)  # 화면 위에서 5분의 2 지점
+    x = int(width / 2)  # 화면 가로 중앙
+
+    # ROI 설정 (detection point 주변의 작은 영역)
+    roi = image[y-10:y+10, x-10:x+10]
+    
+    # BGR에서 HSV로 변환
+    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    
+    # 초록색 범위 정의
+    lower_green = np.array([40, 50, 50])
+    upper_green = np.array([80, 255, 255])
+    
+    # 빨간색 범위 정의 (HSV에서 빨간색은 0-10 또는 170-180)
+    lower_red1 = np.array([0, 50, 50])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 50, 50])
+    upper_red2 = np.array([180, 255, 255])
+    
+    # 마스크 생성
+    mask_green = cv2.inRange(hsv_roi, lower_green, upper_green)
+    mask_red1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
+    mask_red2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
+    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+    
+    # 초록색과 빨간색 픽셀 수 계산
+    green_pixels = cv2.countNonZero(mask_green)
+    red_pixels = cv2.countNonZero(mask_red)
+    
+    # 감지된 색상 결정
+    if green_pixels > red_pixels and green_pixels > 20:  # 임계값 설정
+        return "Green", (x, y)
+    elif red_pixels > green_pixels and red_pixels > 20:  # 임계값 설정
+        return "Red", (x, y)
+    else:
+        return "None", (x, y)
+
+def Lane_Detection(image):
+    processing = process_image(image)
+    region = visualize(processing)
+    region_resized = cv2.resize(region, (image.shape[1], image.shape[0]))
+    combined = cv2.addWeighted(image, 1, region_resized, 0.3, 0)
+    
+    # 색상 감지 및 표시
+    color, point = detect_color(image)
+    if color != "None":
+        cv2.circle(combined, point, 10, (0, 255, 255), -1)  # 감지 지점 표시
+        cv2.putText(combined, f"Detected: {color}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    
+    return combined
 #--------------------------Video test--------------------------------------
 
 first_frame = 1
@@ -303,12 +457,12 @@ if __name__ == "__main__":
     first_frame = 1
     cache = np.zeros(1)
 
-    # 외부 카메라 사용 (일반적으로 인덱스 1)
-    cap = cv2.VideoCapture(3)
+    cap = cv2.VideoCapture(3)  # 외부 카메라 사용
 
     # 카메라 해상도 설정
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 600)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 400)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FPS, 30)
 
     if not cap.isOpened():
         print("외부 카메라를 열 수 없습니다. 내장 카메라를 사용합니다.")
@@ -320,11 +474,12 @@ if __name__ == "__main__":
         if not ret:
             print("프레임을 받아올 수 없습니다.")
             break
-
+        
         frame_count += 1
-        # 3프레임마다 한 번씩 처리
-        if frame_count % 3 == 0:
+        # 2프레임마다 한 번씩 처리 (15fps로 처리)
+        if frame_count % 2 == 0:
             result = Lane_Detection(frame)
+            result = cv2.resize(result, (1920, 1080))  # 원본 크기로 복원
             cv2.imshow("Lane Detection", result)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
