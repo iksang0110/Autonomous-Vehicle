@@ -215,7 +215,7 @@ def warning_text(image):
     angle = int(round(math.atan((dxhalf - center) / 120) * 180 / math.pi, 3) * 3)
 
     # 각도를 0에서 255 사이로 변환
-    mapped_angle = 137 - int((angle / 90) * 118) if angle < 0 else 137 + int((angle / 90) * 118)
+    mapped_angle = 128 - int((angle / 90) * 118) if angle < 0 else 128 + int((angle / 90) * 118)
     mapped_angle = max(0, min(255, mapped_angle))  # 범위 제한
 
     # 아두이노로 각도 전송
