@@ -208,6 +208,8 @@ def warning_text(image):
     center = whalf - 5
     angle = int(round(math.atan((dxhalf-center)/120) * 180/math.pi, 3) * 3)
 
+    print(f"angle: {angle}")
+
     m = 2
     limit = 0
     if angle > 90:
@@ -287,7 +289,7 @@ while (cap.isOpened()):
     
     frame_count += 1
     # 3프레임마다 한 번씩 처리
-    if frame_count % 5 == 0:
+    if frame_count % 2 == 0:
         result = Lane_Detection(frame)
         # 결과를 원본 크기로 다시 확대
         result = cv2.resize(result, (1280, 720))
