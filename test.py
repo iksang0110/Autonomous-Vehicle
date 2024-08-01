@@ -17,7 +17,7 @@ lime = (0, 255, 128)
 font = cv2.FONT_HERSHEY_SIMPLEX
 
 # Global 변수 초기화
-l_center, r_center, lane_center = ((0,0)), ((0,0)), ((0,0))
+l_center, r_center, lane_center = ((0, 0)), ((0, 0)), ((0, 0))
 pts = np.array([[0, 0], [0, 0], [0, 0], [0, 0]], np.int32)
 pts = pts.reshape((-1, 1, 2))
 
@@ -46,8 +46,8 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-def get_slope(x1,y1,x2,y2):
-    return (y2-y1)/(x1-x2)
+def get_slope(x1, y1, x2, y2):
+    return (y2 - y1) / (x2 - x1)
 
 def draw_lines(img, lines):
     global cache
@@ -56,7 +56,7 @@ def draw_lines(img, lines):
     global l_center, r_center, lane_center
     global uxhalf, uyhalf, dxhalf, dyhalf
 
-    y_global_min = img.shape[0] 
+    y_global_min = img.shape[0]
     y_max = img.shape[0]
 
     l_slope, r_slope = [], []
@@ -67,8 +67,8 @@ def draw_lines(img, lines):
 
     if lines is not None:
         for line in lines:
-            for x1,y1,x2,y2 in line:
-                slope = get_slope(x1,y1,x2,y2)
+            for x1, y1, x2, y2 in line:
+                slope = get_slope(x1, y1, x2, y2)
                 if slope > det_slope:
                     r_slope.append(slope)
                     r_lane.append(line)
@@ -78,55 +78,57 @@ def draw_lines(img, lines):
 
         y_global_min = min(y1, y2, y_global_min)
 
-    if (len(l_lane) == 0 or len(r_lane) == 0): 
+    if len(l_lane) == 0 or len(r_lane) == 0:
+        print("차선 인식 실패: 왼쪽 또는 오른쪽 차선을 찾을 수 없습니다.")
         return 1
 
-    l_slope_mean = np.mean(l_slope, axis =0)
-    r_slope_mean = np.mean(r_slope, axis =0)
+    l_slope_mean = np.mean(l_slope, axis=0)
+    r_slope_mean = np.mean(r_slope, axis=0)
     l_mean = np.mean(np.array(l_lane), axis=0)
     r_mean = np.mean(np.array(r_lane), axis=0)
 
-    if ((r_slope_mean == 0) or (l_slope_mean == 0 )):
-        print('dividing by zero')
+    if r_slope_mean == 0 or l_slope_mean == 0:
+        print('Zero slope detected.')
         return 1
 
     l_b = l_mean[0][1] - (l_slope_mean * l_mean[0][0])
     r_b = r_mean[0][1] - (r_slope_mean * r_mean[0][0])
 
-    if np.isnan((y_global_min - l_b)/l_slope_mean) or \
-    np.isnan((y_max - l_b)/l_slope_mean) or \
-    np.isnan((y_global_min - r_b)/r_slope_mean) or \
-    np.isnan((y_max - r_b)/r_slope_mean):
+    if np.isnan((y_global_min - l_b) / l_slope_mean) or \
+            np.isnan((y_max - l_b) / l_slope_mean) or \
+            np.isnan((y_global_min - r_b) / r_slope_mean) or \
+            np.isnan((y_max - r_b) / r_slope_mean):
+        print("차선 인식 실패: NaN 값이 검출되었습니다.")
         return 1
 
-    l_x1 = int((y_global_min - l_b)/l_slope_mean)
-    l_x2 = int((y_max - l_b)/l_slope_mean)
-    r_x1 = int((y_global_min - r_b)/r_slope_mean)
-    r_x2 = int((y_max - r_b)/r_slope_mean)
+    l_x1 = int((y_global_min - l_b) / l_slope_mean)
+    l_x2 = int((y_max - l_b) / l_slope_mean)
+    r_x1 = int((y_global_min - r_b) / r_slope_mean)
+    r_x2 = int((y_max - r_b) / r_slope_mean)
 
     if l_x1 > r_x1:
-        l_x1 = int((l_x1 + r_x1)/2)
+        l_x1 = int((l_x1 + r_x1) / 2)
         r_x1 = l_x1
 
-        l_y1 = int((l_slope_mean * l_x1 ) + l_b)
-        r_y1 = int((r_slope_mean * r_x1 ) + r_b)
-        l_y2 = int((l_slope_mean * l_x2 ) + l_b)
-        r_y2 = int((r_slope_mean * r_x2 ) + r_b)
+        l_y1 = int((l_slope_mean * l_x1) + l_b)
+        r_y1 = int((r_slope_mean * r_x1) + r_b)
+        l_y2 = int((l_slope_mean * l_x2) + l_b)
+        r_y2 = int((r_slope_mean * r_x2) + r_b)
 
-    else: 
+    else:
         l_y1 = y_global_min
         l_y2 = y_max
         r_y1 = y_global_min
         r_y2 = y_max
 
-    current_frame = np.array([l_x1, l_y1, l_x2, l_y2, r_x1, r_y1, r_x2, r_y2], dtype ="float32")
+    current_frame = np.array([l_x1, l_y1, l_x2, l_y2, r_x1, r_y1, r_x2, r_y2], dtype="float32")
 
     if first_frame == 1:
         next_frame = current_frame
         first_frame = 0
     else:
         prev_frame = cache
-        next_frame = (1-α)*prev_frame+α*current_frame
+        next_frame = (1 - α) * prev_frame + α * current_frame
 
     global pts
     pts = np.array([[next_frame[0], next_frame[1]], [next_frame[2], next_frame[3]], [next_frame[6], next_frame[7]], [next_frame[4], next_frame[5]]], np.int32)
@@ -137,10 +139,10 @@ def draw_lines(img, lines):
     r_center = (int((next_frame[4] + next_frame[6]) / div), int((next_frame[5] + next_frame[7]) / div))
     lane_center = (int((l_center[0] + r_center[0]) / div), int((l_center[1] + r_center[1]) / div))
 
-    uxhalf = int((next_frame[2]+next_frame[6])/2)
-    uyhalf = int((next_frame[3]+next_frame[7])/2)
-    dxhalf = int((next_frame[0]+next_frame[4])/2)
-    dyhalf = int((next_frame[1]+next_frame[5])/2)
+    uxhalf = int((next_frame[2] + next_frame[6]) / 2)
+    uyhalf = int((next_frame[3] + next_frame[7]) / 2)
+    dxhalf = int((next_frame[0] + next_frame[4]) / 2)
+    dyhalf = int((next_frame[1] + next_frame[5]) / 2)
 
     cache = next_frame
 
@@ -163,7 +165,7 @@ def process_image(image):
     low_thresh = 100
     high_thresh = 150
     rho = 4
-    theta = np.pi/180
+    theta = np.pi / 180
     thresh = 100
     min_line_len = 50
     max_line_gap = 150
@@ -171,8 +173,8 @@ def process_image(image):
     gray_image = grayscale(image)
     img_hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
 
-    lower_yellow = np.array([20, 100, 100], dtype = "uint8")
-    upper_yellow = np.array([30, 255, 255], dtype = "uint8")
+    lower_yellow = np.array([20, 100, 100], dtype="uint8")
+    upper_yellow = np.array([30, 255, 255], dtype="uint8")
 
     mask_yellow = cv2.inRange(img_hsv, lower_yellow, upper_yellow)
     mask_white = cv2.inRange(gray_image, 100, 255)
@@ -195,57 +197,60 @@ def process_image(image):
 def get_pts(image):
     height, width = image.shape[:2]
     vertices = np.array([
-                [250, 650],
-                [550, 470],
-                [730, 470],
-                [1100, 650]
-                ])
+        [250, 650],
+        [550, 470],
+        [730, 470],
+        [1100, 650]
+    ])
     return vertices
 
 def warning_text(image):
     global dxhalf
     whalf, height = 640, 720
     center = whalf - 5
-    angle = int(round(math.atan((dxhalf-center)/120) * 180/math.pi, 3) * 3)
+    angle = int(round(math.atan((dxhalf - center) / 120) * 180 / math.pi, 3) * 3)
 
-    # Print the angle to the terminal
-    print(f"Current angle: {angle} degrees")
+    # 각도를 0에서 255 사이로 변환
+    mapped_angle = 137 - int((angle / 90) * 118) if angle < 0 else 137 + int((angle / 90) * 118)
+    mapped_angle = max(0, min(255, mapped_angle))  # 범위 제한
+
+    print(f"angle: {angle}, mapped_angle: {mapped_angle}")
 
     m = 2
     limit = 0
     if angle > 90:
         angle = 89
     if 90 > angle > limit:
-        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, red, 1)
-        cv2.putText(image, 'Turn Right', (150, 30*m), font, 0.8, red, 1)
+        cv2.putText(image, 'WARNING : ', (10, 30 * m), font, 0.8, red, 1)
+        cv2.putText(image, 'Turn Right', (150, 30 * m), font, 0.8, red, 1)
 
     if angle < -90:
         angle = -89
     if -90 < angle < -limit:
-        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, red, 1)
-        cv2.putText(image, 'Turn Left', (150, 30*m), font, 0.8, red, 1)
+        cv2.putText(image, 'WARNING : ', (10, 30 * m), font, 0.8, red, 1)
+        cv2.putText(image, 'Turn Left', (150, 30 * m), font, 0.8, red, 1)
 
     elif angle == 0:
-        cv2.putText(image, 'WARNING : ', (10, 30*m), font, 0.8, white, 1)
-        cv2.putText(image, 'None', (150, 30*m), font, 0.8, white, 1)
+        cv2.putText(image, 'WARNING : ', (10, 30 * m), font, 0.8, white, 1)
+        cv2.putText(image, 'None', (150, 30 * m), font, 0.8, white, 1)
 
 def direction_line(image, height, whalf, color=yellow):
-    cv2.line(image, (whalf-5, height), (whalf-5, 600), white, 2)  # 방향 제어 기준선
-    cv2.line(image, (whalf-5, height), (dxhalf, 600), red, 2)  # 핸들 방향 제어
-    cv2.circle(image, (whalf-5, height), 120, white, 2)
+    cv2.line(image, (whalf - 5, height), (whalf - 5, 600), white, 2)  # 방향 제어 기준선
+    cv2.line(image, (whalf - 5, height), (dxhalf, 600), red, 2)  # 핸들 방향 제어
+    cv2.circle(image, (whalf - 5, height), 120, white, 2)
 
 def lane_position(image, gap=20, length=20, thickness=2, color=red, bcolor=white):
     global l_cent, r_cent
 
     l_left = 300
     l_right = 520
-    l_cent = int((l_left+l_right)/2)
-    cv2.line(image, (l_center[0], l_center[1]+length), (l_center[0], l_center[1]-length), color, thickness)
+    l_cent = int((l_left + l_right) / 2)
+    cv2.line(image, (l_center[0], l_center[1] + length), (l_center[0], l_center[1] - length), color, thickness)
 
     r_left = 730
     r_right = 950
-    r_cent = int((r_left+r_right)/2)
-    cv2.line(image, (r_center[0], r_center[1]+length), (r_center[0], r_center[1]-length), color, thickness)
+    r_cent = int((r_left + r_right) / 2)
+    cv2.line(image, (r_center[0], r_center[1] + length), (r_center[0], r_center[1] - length), color, thickness)
 
 def draw_lanes(image, thickness=3, color=red):
     cv2.line(image, (int(next_frame[0]), int(next_frame[1])), (int(next_frame[2]), int(next_frame[3])), red, 3)
@@ -253,11 +258,11 @@ def draw_lanes(image, thickness=3, color=red):
 
 def visualize(result):
     height, width = result.shape[:2]
-    whalf = int(width/2)
-    hhalf = int(height/2)
+    whalf = int(width / 2)
+    hhalf = int(height / 2)
 
     zeros = np.zeros_like(result)
-    
+
     if not lane_center[1] < hhalf:
         cv2.fillPoly(zeros, [pts], lime)
         lane_position(zeros)
@@ -287,7 +292,7 @@ while (cap.isOpened()):
     ret, frame = cap.read()
     if not ret:
         break
-    
+
     frame_count += 1
     # 3프레임마다 한 번씩 처리
     if frame_count % 2 == 0:
@@ -300,7 +305,7 @@ while (cap.isOpened()):
         break
 
 cap.release()
-cv2.destroyAllWindows() 
+cv2.destroyAllWindows()
 '''
 if __name__ == "__main__":
     first_frame = 1

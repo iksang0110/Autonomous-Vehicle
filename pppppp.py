@@ -217,7 +217,8 @@ def warning_text(image):
     # 각도를 0에서 255 사이로 변환
     mapped_angle = 128 - int((angle / 90) * 118) if angle < 0 else 128 + int((angle / 90) * 118)
     mapped_angle = max(0, min(255, mapped_angle))  # 범위 제한
-
+    173왼쪽
+    83 오르쩍
     # 아두이노로 각도 전송
     ser.write(bytes([mapped_angle]))
 
